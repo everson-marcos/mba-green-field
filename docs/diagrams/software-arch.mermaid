@@ -1,0 +1,66 @@
+flowchart LR
+    %% StreamTube — Arquitetura do Software
+
+    subgraph Clientes
+        anon["Usuário anônimo<br/>(assistir, download)"]
+        auth["Usuário autenticado<br/>(upload, comentários, likes, inscrições)"]
+    end
+
+    subgraph Frontend
+        web["Next.js<br/>Páginas: home, busca, vídeo,<br/>canal, painel, auth"]
+    end
+
+    subgraph Backend["Backend — Nest.js"]
+        api["API HTTP<br/>(REST)"]
+
+        subgraph Modulos["Módulos"]
+            mAuth["Auth & Conta<br/>cadastro, confirmação,<br/>login/sessão, reset de senha"]
+            mChannels["Canais<br/>página pública, edição"]
+            mVideos["Vídeos<br/>rascunho/publicação,<br/>visibilidade, categorias, URL única"]
+            mUpload["Upload<br/>resumível, até 10GB"]
+            mStream["Streaming & Download<br/>HTTP Range"]
+            mSocial["Social<br/>likes/dislikes, comentários<br/>aninhados, inscrições"]
+            mSearch["Busca & Sugestões<br/>título, canal, categoria"]
+            mMail["E-mail transacional"]
+        end
+
+        worker["Workers em segundo plano<br/>metadados/duração do vídeo,<br/>geração de thumbnail"]
+    end
+
+    subgraph Infra["Infraestrutura"]
+        db[("PostgreSQL<br/>usuários, canais, vídeos,<br/>comentários, likes, inscrições")]
+        queue[["Fila de jobs"]]
+        storage[("Armazenamento de arquivos<br/>vídeos e thumbnails")]
+        smtp["Servidor SMTP<br/>(Mailpit em dev)"]
+    end
+
+    anon --> web
+    auth --> web
+    web -->|"HTTP/JSON"| api
+    web -->|"upload em partes"| mUpload
+    web -->|"player / download"| mStream
+
+    api --> mAuth
+    api --> mChannels
+    api --> mVideos
+    api --> mSocial
+    api --> mSearch
+
+    mAuth --> mMail
+    mAuth -->|"cria canal a partir<br/>do prefixo do e-mail"| mChannels
+    mMail --> smtp
+
+    mUpload -->|"pré-cadastra rascunho"| mVideos
+    mUpload -->|"grava arquivo"| storage
+    mUpload -->|"enfileira processamento"| queue
+    queue --> worker
+    worker -->|"lê vídeo / grava thumbnail"| storage
+    worker -->|"atualiza metadados"| db
+
+    mStream -->|"leitura por range"| storage
+
+    mAuth --> db
+    mChannels --> db
+    mVideos --> db
+    mSocial --> db
+    mSearch --> db
